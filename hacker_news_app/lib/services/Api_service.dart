@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/article.dart';
+import '../models/comment.dart';
+
 
 class ApiService {
   static const String baseUrl = 'https://hacker-news.firebaseio.com/v0';
@@ -35,6 +37,17 @@ class ApiService {
   final response = await http.get(Uri.parse('https://hacker-news.firebaseio.com/v0/item/$id.json'));
   return response.statusCode == 200 && response.body != 'null';
 }
+
+Future<Comment> fetchCommentById(int id) async {
+  final response = await http.get(Uri.parse('https://hacker-news.firebaseio.com/v0/item/$id.json'));
+  if (response.statusCode == 200) {
+    return Comment.fromJson(jsonDecode(response.body));
+  } else {
+    throw Exception('Erreur lors du chargement du commentaire');
+  }
+}
+
+
 
 }
 
