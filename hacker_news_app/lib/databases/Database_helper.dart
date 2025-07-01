@@ -1,6 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
-import '../models/article.dart';
+import '../models/Article.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -30,16 +30,16 @@ class DatabaseHelper {
       CREATE TABLE articles (
         id INTEGER PRIMARY KEY,
         title TEXT,
-        by TEXT NOT NULL,
-        time INTEGER,
-        descendants INTEGER,
+        by TEXT,
         url TEXT,
         kids TEXT,
+        descendants INTEGER,
         isFavorite INTEGER NOT NULL DEFAULT 0
-          )
-        ''');
+      )
+    ''');
   }
 
+  // Insérer ou mettre à jour un article
   Future<void> insertArticle(Article article) async {
     final db = await instance.database;
     await db.insert(
@@ -47,34 +47,41 @@ class DatabaseHelper {
       article.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
-    print("Article sauvegardé : ${article.toMap()}");
-
   }
 
+  // Récupérer un article par id localement
+  Future<Article?> getArticleById(int id) async {
+    final db = await instance.database;
+    final maps = await db.query(
+      'articles',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (maps.isNotEmpty) {
+      return Article.fromMap(maps.first);
+    } else {
+      return null;
+    }
+  }
+
+  // Récupérer tous les articles sauvegardés
   Future<List<Article>> getArticles() async {
     final db = await instance.database;
     final result = await db.query('articles');
     return result.map((map) => Article.fromMap(map)).toList();
   }
 
-  Future<void> deleteAllArticles() async {
+  // Récupérer uniquement les favoris
+  Future<List<Article>> getFavoriteArticles() async {
     final db = await instance.database;
-    await db.delete('articles');
+    final result = await db.query('articles', where: 'isFavorite = ?', whereArgs: [1]);
+    return result.map((map) => Article.fromMap(map)).toList();
   }
 
-  Future<void> cleanOldArticles(Future<bool> Function(int id) isAvailableOnApi) async {
-  final db = await database;
-  final articles = await getArticles();
-
-  for (var article in articles) {
-    if (!article.isFavorite) {
-      final stillExists = await isAvailableOnApi(article.id);
-      if (!stillExists) {
-        await db.delete('articles', where: 'id = ?', whereArgs: [article.id]);
-      }
-    }
+  // Supprimer un article localement
+  Future<void> deleteArticle(int id) async {
+    final db = await instance.database;
+    await db.delete('articles', where: 'id = ?', whereArgs: [id]);
   }
 }
-
-}
-

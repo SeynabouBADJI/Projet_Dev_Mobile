@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:hacker_news_app/providers/CommentProvider.dart';
+import 'package:hacker_news_app/widgets/CommentWidget.dart';
+import 'package:provider/provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-import '../models/article.dart';
-import '../models/comment.dart';
-import '../services/Api_service.dart';
-import '../widgets/CommentWidget.dart';  // <-- importe le widget CommentWidget
+
+import '../models/Article.dart';
+import '../providers/ArticleProvider.dart';
+import '../widgets/CommentWidget.dart';
 
 class ArticleScreen extends StatefulWidget {
   final Article article;
-
   const ArticleScreen({super.key, required this.article});
 
   @override
@@ -16,43 +18,21 @@ class ArticleScreen extends StatefulWidget {
 
 class _ArticleScreenState extends State<ArticleScreen> {
   late final WebViewController _controller;
-  List<Comment> topLevelComments = [];
   bool _showComments = false;
-  bool _isLoadingComments = false;
 
   @override
   void initState() {
     super.initState();
     _controller = WebViewController()
-      ..loadRequest(Uri.parse(widget.article.url ?? 'https://news.ycombinator.com/item?id=${widget.article.id}'));
-  }
-
-  Future<void> _loadTopLevelComments() async {
-    if (_isLoadingComments || topLevelComments.isNotEmpty) return;
-    if (widget.article.kids == null || widget.article.kids!.isEmpty) return;
-
-    setState(() {
-      _isLoadingComments = true;
-    });
-
-    try {
-      final comments = await Future.wait(
-        widget.article.kids!.map((id) => ApiService().fetchCommentById(id)),
+      ..loadRequest(
+        Uri.parse(widget.article.url ?? 'https://news.ycombinator.com/item?id=${widget.article.id}'),
       );
-      setState(() {
-        topLevelComments = comments.whereType<Comment>().toList();
-      });
-    } catch (e) {
-      // gérer erreur éventuelle
-    } finally {
-      setState(() {
-        _isLoadingComments = false;
-      });
-    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final commentProvider = Provider.of<CommentProvider>(context);
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.article.title),
@@ -82,7 +62,9 @@ class _ArticleScreenState extends State<ArticleScreen> {
                   _showComments = !_showComments;
                 });
                 if (_showComments) {
-                  await _loadTopLevelComments();
+                  await commentProvider.loadComments(widget.article.kids);
+                } else {
+                  commentProvider.clearComments();
                 }
               },
             ),
@@ -90,12 +72,12 @@ class _ArticleScreenState extends State<ArticleScreen> {
           if (_showComments)
             Expanded(
               flex: 5,
-              child: _isLoadingComments
+              child: commentProvider.isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : ListView.builder(
-                      itemCount: topLevelComments.length,
+                      itemCount: commentProvider.comments.length,
                       itemBuilder: (context, index) {
-                        final comment = topLevelComments[index];
+                        final comment = commentProvider.comments[index];
                         return CommentWidget(comment: comment);
                       },
                     ),
