@@ -1,45 +1,54 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-
+import '../databases/Database_helper.dart';
 import '../models/Article.dart';
-import '../screens/Article_screen.dart';
-import '../providers/ArticleProvider.dart';
+import 'Article_screen.dart';
 
 class SavedArticlesScreen extends StatelessWidget {
   const SavedArticlesScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final articleProvider = Provider.of<ArticleProvider>(context);
+    return FutureBuilder<List<Article>>(
+      future: DatabaseHelper.instance.getArticles(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Articles sauvegardés')),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
 
-    final savedArticles = articleProvider.articles;
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Articles sauvegardés')),
+            body: const Center(child: Text('Aucun article sauvegardé.')),
+          );
+        }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Articles sauvegardés'),
-        backgroundColor: Colors.deepOrange,
-      ),
-      body: savedArticles.isEmpty
-          ? const Center(child: Text('Aucun article sauvegardé.'))
-          : ListView.builder(
-              itemCount: savedArticles.length,
-              itemBuilder: (context, index) {
-                final article = savedArticles[index];
-                return ListTile(
-                  title: Text(article.title),
-                  subtitle: Text('Par ${article.by}'),
-                  trailing: const Icon(Icons.arrow_forward),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ArticleScreen(article: article),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
+        final savedArticles = snapshot.data!;
+        return Scaffold(
+          appBar: AppBar(title: const Text('Articles sauvegardés')),
+          body: ListView.builder(
+            itemCount: savedArticles.length,
+            itemBuilder: (context, index) {
+              final article = savedArticles[index];
+              return ListTile(
+                title: Text(article.title),
+                subtitle: Text('Par ${article.by}'),
+                trailing: const Icon(Icons.arrow_forward),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ArticleScreen(article: article),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }

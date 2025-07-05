@@ -79,9 +79,14 @@ class DatabaseHelper {
     return result.map((map) => Article.fromMap(map)).toList();
   }
 
-  // Supprimer un article localement
-  Future<void> deleteArticle(int id) async {
-    final db = await instance.database;
-    await db.delete('articles', where: 'id = ?', whereArgs: [id]);
-  }
+
+  Future<int> deleteArticle(int id) async {
+  final db = await database;
+  return await db.delete(
+    'articles', // Nom de ta table SQLite
+    where: 'id = ?',
+    whereArgs: [id],
+  );
+}
+
 }

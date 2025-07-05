@@ -1,94 +1,21 @@
-
-// import 'package:flutter/foundation.dart';
-// import '../models/article.dart';
-// import '../services/api_service.dart';
-// import '../databases/Database_helper.dart';
-
-// class ArticleProvider extends ChangeNotifier {
-//   final ApiService apiService = ApiService();
-
-//   List<Article> _articles = [];
-//   bool _isLoading = false;
-//   String? _error;
-
-//   List<Article> get articles => _articles;
-//   bool get isLoading => _isLoading;
-//   String? get error => _error;
-
-//   Future<void> loadArticlesWithCache() async {
-//     _isLoading = true;
-//     notifyListeners();
-
-//     try {
-//       final ids = await apiService.fetchTopStoryIds();
-//       List<Article> loadedArticles = [];
-
-//       for (var id in ids) {
-//         Article? localArticle = await DatabaseHelper.instance.getArticleById(id);
-//         if (localArticle != null) {
-//           loadedArticles.add(localArticle);
-//         } else {
-//           try {
-//             Article fetchedArticle = await apiService.fetchArticleById(id);
-//             await DatabaseHelper.instance.insertArticle(fetchedArticle);
-//             loadedArticles.add(fetchedArticle);
-//           } catch (e) {
-//             debugPrint("Erreur chargement article $id depuis API : $e");
-//           }
-//         }
-//       }
-
-//       _articles = loadedArticles;
-//       _error = null;
-//     } catch (e) {
-//       _error = e.toString();
-//     }
-
-//     _isLoading = false;
-//     notifyListeners();
-//   }
-
-//   Future<void> toggleFavorite(Article article) async {
-//     article.isFavorite = article.isFavorite == 1 ? 0 : 1;
-//     await DatabaseHelper.instance.insertArticle(article);
-//     notifyListeners();
-//   }
-
-//   Future<void> saveArticle(Article article) async {
-//     await DatabaseHelper.instance.insertArticle(article);
-//     // Recharge la liste localement si besoin
-//     await loadArticlesWithCache();
-//   }
-
-//   Future<void> cleanupOldArticles() async {
-//     final allArticles = await DatabaseHelper.instance.getArticles();
-
-//     for (var article in allArticles) {
-//       if (article.isFavorite == 1) continue;
-
-//       try {
-//         await apiService.fetchArticleById(article.id);
-//       } catch (_) {
-//         await DatabaseHelper.instance.deleteArticle(article.id);
-//       }
-//     }
-//     // Recharge la liste après nettoyage
-//     await loadArticlesWithCache();
-//   }
-// }
 import 'package:flutter/material.dart';
-import '../databases/Database_helper.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+
 import '../models/Article.dart';
-import '../services/Api_service.dart';
+import '../services/api_service.dart';
+import '../databases/Database_helper.dart';
 
 class ArticleProvider extends ChangeNotifier {
   final ApiService apiService = ApiService();
 
-  List<Article> _articles = [];
+  List<Article> _allArticles = [];
+  List<Article> _savedArticles = [];
+
   bool _isLoading = false;
   String? _error;
 
-  List<Article> get articles => _articles;
+  List<Article> get allArticles => _allArticles;
+  List<Article> get savedArticles => _savedArticles;
   bool get isLoading => _isLoading;
   String? get error => _error;
 
@@ -96,31 +23,48 @@ class ArticleProvider extends ChangeNotifier {
     loadArticlesWithCache();
   }
 
+  Future<bool> hasInternetConnection() async {
+    var connectivityResult = await Connectivity().checkConnectivity();
+    return connectivityResult != ConnectivityResult.none;
+  }
+
   Future<void> loadArticlesWithCache() async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
+    bool connected = await hasInternetConnection();
+
+    // Charger les articles déjà sauvegardés localement
+    _savedArticles = await DatabaseHelper.instance.getArticles();
+
+    if (!connected) {
+      if (_savedArticles.isEmpty) {
+        _error = "Pas de connexion internet et aucun article local disponible.";
+      }
+      _allArticles = _savedArticles;
+      _isLoading = false;
+      notifyListeners();
+      return;
+    }
+
+    // Si connecté : charger depuis l’API et marquer les articles sauvegardés
     try {
       final ids = await apiService.fetchTopStoryIds();
-      List<Article> articlesLoaded = [];
+      List<Article> loaded = [];
 
-      for (var id in ids) {
-        Article? localArticle = await DatabaseHelper.instance.getArticleById(id);
-        if (localArticle != null) {
-          articlesLoaded.add(localArticle);
-        } else {
-          try {
-            Article fetchedArticle = await apiService.fetchArticleById(id);
-            await DatabaseHelper.instance.insertArticle(fetchedArticle);
-            articlesLoaded.add(fetchedArticle);
-          } catch (e) {
-            debugPrint("Erreur chargement article $id : $e");
-          }
+      for (var id in ids.take(30)) { // Limite si besoin
+        try {
+          Article article = await apiService.fetchArticleById(id);
+          // Vérifier s’il est dans les sauvegardés
+          article.isFavorite = _savedArticles.any((a) => a.id == id && a.isFavorite);
+          loaded.add(article);
+        } catch (e) {
+          debugPrint("Erreur chargement article $id : $e");
         }
       }
 
-      _articles = articlesLoaded;
+      _allArticles = loaded;
     } catch (e) {
       _error = 'Erreur de chargement : $e';
     }
@@ -129,40 +73,37 @@ class ArticleProvider extends ChangeNotifier {
     notifyListeners();
   }
 
- Future<void> toggleFavorite(Article article) async {
-  article.isFavorite = !article.isFavorite; // inverser le booléen
-  await DatabaseHelper.instance.insertArticle(article);
-  notifyListeners();
-}
-
-
   Future<void> saveArticle(Article article) async {
     await DatabaseHelper.instance.insertArticle(article);
-    if (!_articles.any((a) => a.id == article.id)) {
-      _articles.add(article);
-      notifyListeners();
+    if (!_savedArticles.any((a) => a.id == article.id)) {
+      _savedArticles.add(article);
     }
+    notifyListeners();
   }
 
-  Future<void> cleanupOldArticles() async {
-    List<Article> toRemove = [];
+  Future<void> removeArticle(int articleId) async {
+    await DatabaseHelper.instance.deleteArticle(articleId);
+    _savedArticles.removeWhere((a) => a.id == articleId);
+    notifyListeners();
+  }
 
-    for (var article in _articles) {
-      if (article.isFavorite) continue; // c’est bool donc pas == 1
-      try {
-        await apiService.fetchArticleById(article.id);
-      } catch (_) {
-        await DatabaseHelper.instance.deleteArticle(article.id);
-        toRemove.add(article);
-      }
+  Future<bool> isArticleSaved(int id) async {
+    return _savedArticles.any((a) => a.id == id);
+  }
+
+  void toggleFavorite(Article article) async {
+    article.isFavorite = !article.isFavorite;
+    await DatabaseHelper.instance.insertArticle(article);
+
+    // Mettre à jour la version locale si elle existe
+    final index = _savedArticles.indexWhere((a) => a.id == article.id);
+    if (index != -1) {
+      _savedArticles[index] = article;
     }
 
-    if (toRemove.isNotEmpty) {
-      _articles.removeWhere((a) => toRemove.contains(a));
-      notifyListeners();
-    }
+    notifyListeners();
   }
 
   List<Article> get favoriteArticles =>
-      _articles.where((article) => article.isFavorite).toList();
+      _allArticles.where((article) => article.isFavorite).toList();
 }
